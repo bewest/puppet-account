@@ -75,6 +75,10 @@
 #   Defaults to 'users'
 #     WARNING: Has no effect if used with $create_group = true
 #
+# [*sshkeys*]
+#   An array of SSH keys to manage for user logins
+#   Defaults to undef.
+#
 # === Examples
 #
 #  account { 'sysadmin':
@@ -94,7 +98,7 @@ define account(
   $username = $title, $password = '!', $shell = '/bin/bash', $manage_home = true,
   $home_dir = undef, $create_group = true, $system = false, $uid = undef,
   $ssh_key = undef, $ssh_key_type = 'ssh-rsa', $groups = [], $ensure = present,
-  $comment= "$title Puppet-managed User", $gid = 'users'
+  $comment= "$title Puppet-managed User", $gid = 'users', $sshkeys = []
 ) {
 
   if $home_dir == undef {
@@ -102,6 +106,8 @@ define account(
   } else {
       $home_dir_real = $home_dir
   }
+
+  $key_file = "${home_dir_real}/.ssh/authorized_keys"
 
   if $create_group == true {
     $primary_group = $username
@@ -174,18 +180,34 @@ define account(
       path    => "${home_dir_real}/.ssh",
       owner   => $dir_owner,
       group   => $dir_group,
-      mode    => 0700;
+      mode    => 0700,
+      require => File["${title}_home"];
+
+    "${title}_authorized_keys":
+      ensure  => file,
+      owner   => $dir_owner,
+      group   => $dir_group,
+      path    => $key_file,
+      mode    => 0644;
   }
 
   if $ssh_key != undef {
-    File["${title}_sshdir"]->
-    ssh_authorized_key {
-      $title:
-        ensure  => $ensure,
-        type    => $ssh_key_type,
-        name    => "${title} SSH Key",
-        user    => $username,
-        key     => $ssh_key,
+    account::manage_ssh_keys {
+      "${ssh_key_type} ${ssh_key} ${title} SSH Key":
+        user     => $username,
+        key_file => $key_file,
+        require  => File["${title}_sshdir"],
+        before   => File["${title}_authorized_keys"];
+    }
+  }
+
+  if $sshkeys != [] {
+    account::manage_ssh_keys {
+      $sshkeys:
+        user     => $username,
+        key_file => $key_file,
+        require  => File["${title}_sshdir"],
+        before   => File["${title}_authorized_keys"];
     }
   }
 }
